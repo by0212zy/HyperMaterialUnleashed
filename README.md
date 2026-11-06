@@ -109,7 +109,7 @@ LSPosed 日志筛 `HM-Unleash`：
 
 产物：`app/build/outputs/apk/release/app-release.apk`
 
-仓库已配置 GitHub Actions：push 到 `main` 自动构建 release APK 并上传 artifact；推送 `v*` 标签时自动附加到 Release。
+仓库已配置 GitHub Actions：push 到 `main` 或 `v*` 标签自动构建 release APK 并上传构建产物；Release 附件（带版本号的 APK 与源码包）在发版时手动上传。
 
 ---
 
