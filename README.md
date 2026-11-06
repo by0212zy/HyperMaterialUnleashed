@@ -26,17 +26,21 @@ HyperOS 3 的 LSPosed 模块，做两件互不依赖的事：
 
 模块在**系统桌面进程**内注册了一个可跨应用调用的广播接收器。任何 App 只要能执行 `am broadcast`，就能触发一次「长按手势提示线」。
 
-### 最简命令（在手机上由其它 App 执行）
+### 主命令（推荐，在手机上由其它 App 执行）
 
 ```sh
 am broadcast -a com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS
 ```
 
-### 推荐写法（限定只投递给桌面，避免广播扩散）
+这条不带任何限制，一定会被桌面进程里动态注册的接收器收到。
+
+### 可选：限定只投递给桌面
 
 ```sh
 am broadcast -a com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS -p com.miui.home
 ```
+
+接收器由 `com.miui.home` 进程注册，`-p com.miui.home` 与它自身包名一致，正常情况下会匹配；**若加上 `-p` 后没有反应，去掉 `-p` 即可**。
 
 ### 从电脑 adb 触发 / 调试
 
@@ -68,7 +72,7 @@ am broadcast -a com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS --es fr
 
 | 工具 | 配置 |
 | --- | --- |
-| Tasker | 「运行 Shell」动作填上面的命令；或用「发送 Intent」：Action = `com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS`，Package = `com.miui.home`，Target = **Broadcast Receiver** |
+| Tasker | 「运行 Shell」动作填上面的命令；或用「发送 Intent」：Action = `com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS`，Target = **Broadcast Receiver**，Package 可填 `com.miui.home`（可选，不填更保险） |
 | MacroDroid | 动作 → 应用程序 → 「Shell 脚本」，填命令 |
 | Termux / 任意终端 | 直接执行 `am broadcast ...`（Termux 需先 `pkg install termux-am` 或直接用 `/system/bin/am`） |
 | 自己写的 App | `Runtime.getRuntime().exec("am broadcast -a com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS -p com.miui.home")`，或直接 `sendBroadcast(new Intent(...).setPackage("com.miui.home"))` |
@@ -82,7 +86,8 @@ am broadcast -a com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS --es fr
 | --- | --- |
 | 主 action（推荐） | `com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS` |
 | 别名 action（强制识屏） | `com.hyperos.hypermaterial.action.XIAOAI_SCREEN_RECOGNIZE` |
-| 目标包名 | `com.miui.home` |
+| 目标包名 | `com.miui.home`（接收器所在进程） |
+| `-p com.miui.home` | 可选，限定只投递给桌面；若不生效请去掉 |
 | `--es from <字符串>` | 可选，来源标记，写入 `HM-Unleash` 日志 |
 | `--es target screen_recognize` | 可选，等价于强制识屏 action |
 | 权限 | 无，任何应用均可发送 |
