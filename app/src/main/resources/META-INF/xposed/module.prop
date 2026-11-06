@@ -2,3 +2,4 @@ minApiVersion=102
 targetApiVersion=102
 staticScope=false
 exceptionMode=protective
+description=高级材质分应用解锁；am broadcast 可触发长按手势提示线的超级小爱识屏，命令见 README

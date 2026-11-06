@@ -85,6 +85,15 @@ public class ModuleMain extends XposedModule {
         // 系统桌面专属：放行自己的 BlurUtilities 门控链（不走 miuix）
         if (Config.PATCH_LAUNCHER && Config.LAUNCHER_PKG.equals(pkg)) {
             LauncherHooks.install(this, loader, pkg);
+
+            // 把「长按手势提示线 → 超级小爱识屏」暴露成广播入口。
+            // 只在桌面主进程注册，避免一次广播被多个子进程重复触发。
+            // 广播接收器必须在应用就绪后注册：早期注册会让外部广播触发宿主类
+            // 的 <clinit>（v1.2 闪退根因），且 Android 13+ 需要显式 exported。
+            if (Config.ENABLE_XIAOAI_TRIGGER && !proc.contains(":")) {
+                Deferred.post(this, pkg,
+                        () -> XiaoAiGestureTrigger.install(this, loader, pkg));
+            }
         }
     }
 }
