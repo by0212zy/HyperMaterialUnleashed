@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">高级材质解锁</string>
-    <string name="module_description">不开启系统「高级材质」总开关，仅在 LSPosed 作用域勾选的应用内（默认系统桌面）放行高级材质；并把「长按手势提示线 → 超级小爱识屏」暴露为 am broadcast 广播入口，供其它 App 调用。基于 libxposed 现代 API 102，无界面、无启动图标，系统属性与设置数据库均不修改。</string>
+    <string name="module_description">不开启系统「高级材质」总开关，仅在 LSPosed 作用域勾选的应用内（默认系统桌面）放行高级材质；并把「长按手势提示线 → 超级小爱识屏」暴露为 am broadcast 广播入口，供其它 App 调用。基于 libxposed 现代 API 102，无界面、无启动图标，系统属性与设置数据库均不修改。\n\n识屏命令：am broadcast -a com.hyperos.hypermaterial.action.GESTURE_LINE_LONG_PRESS\n强制识屏：am broadcast -a com.hyperos.hypermaterial.action.XIAOAI_SCREEN_RECOGNIZE</string>
 </resources>

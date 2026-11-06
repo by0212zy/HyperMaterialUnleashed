@@ -16,8 +16,8 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam;
  * 现代 libxposed API 不注入 Zygote，只注入作用域内应用的进程；因此「分应用生效」
  * 天然等于「在 LSPosed 里只勾选这些应用」，系统属性与 Settings 全局开关都不动。
  *
- * v2.0：移除设置（com.android.settings）相关的全部 Hook 与「我的设备」版本卡片补丁——
- * 实测只放行系统桌面即可获得高级材质，设置侧 Hook 从未在桌面命中。
+ * v3.0 正式版：移除从未命中的设置应用 Hook、版本卡片补丁、猜测性门控 Hook、
+ * 整类 deoptimize、安装期方法清单 dump 与 classloader 猜测兜底，只保留实测生效的最小链路。
  */
 public class ModuleMain extends XposedModule {
 
@@ -42,24 +42,12 @@ public class ModuleMain extends XposedModule {
         final ClassLoader loader = param.getClassLoader();
 
         Diag.i(this, "onPackageReady 进程=" + proc + " 包=" + pkg
-                + " isFirstPackage=" + param.isFirstPackage()
-                + " loader=" + (loader == null ? "null" : loader.getClass().getName()));
+                + " isFirstPackage=" + param.isFirstPackage());
 
         try {
             // 武装延迟执行器（幂等）：静态字段注入必须等应用就绪后才能触发 <clinit>
             Deferred.arm(this, pkg);
             installOnce(loader, pkg, proc);
-
-            // 少数 ROM 用自定义 AppComponentFactory 换了 classloader，兜底再试一次
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    && Host.find(loader, HyperMaterialHooks.HM_CLASS) == null) {
-                ClassLoader def = param.getDefaultClassLoader();
-                Diag.i(this, "主 loader 无 HyperMaterialUtils，尝试 defaultClassLoader="
-                        + (def == null ? "null" : def.getClass().getName()));
-                if (def != null && def != loader) {
-                    installOnce(def, pkg, proc);
-                }
-            }
         } catch (Throwable t) {
             Diag.e(this, "安装 Hook 失败: " + pkg + "/" + proc, t);
         }
@@ -88,8 +76,8 @@ public class ModuleMain extends XposedModule {
 
             // 把「长按手势提示线 → 超级小爱识屏」暴露成广播入口。
             // 只在桌面主进程注册，避免一次广播被多个子进程重复触发。
-            // 广播接收器必须在应用就绪后注册：早期注册会让外部广播触发宿主类
-            // 的 <clinit>（v1.2 闪退根因），且 Android 13+ 需要显式 exported。
+            // 广播接收器必须在应用就绪后注册：早期注册会让外部广播触发宿主类的
+            // <clinit>（v1.2 闪退根因），且 Android 13+ 需要显式 exported。
             if (Config.ENABLE_XIAOAI_TRIGGER && !proc.contains(":")) {
                 Deferred.post(this, pkg,
                         () -> XiaoAiGestureTrigger.install(this, loader, pkg));

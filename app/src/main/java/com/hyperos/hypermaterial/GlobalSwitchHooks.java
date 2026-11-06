@@ -16,16 +16,18 @@ import io.github.libxposed.api.XposedModule;
 /**
  * 通用层：在本进程内把「高级材质总开关」的读取结果伪造成已开启。
  *
- * 这是「不开启总开关，只让部分应用内生效」最根本的做法：
- * 反编译系统桌面 3.0.3 发现，桌面根本不经过 miuix 的 HyperMaterialUtils，
- * 而是 com.miui.home.common.utils.BlurUtilities.setBackgroundBlurEnabled() 直接读
- *   Settings.Secure.getInt(resolver, "background_blur_enable", 0)
- * 写进静态字段 IS_BACKGROUND_BLUR_ENABLED；关了总开关它就是 false，
+ * 反编译系统桌面 3.0.3：桌面不走 miuix 的 HyperMaterialUtils，而是
+ * BlurUtilities.setBackgroundBlurEnabled() 直接读
+ * {@code Settings.Secure.getInt(resolver, "background_blur_enable", 0)}
+ * 写进静态字段 IS_BACKGROUND_BLUR_ENABLED。关了总开关它就是 false，
  * isBlurSupported() 直接返回 false，桌面所有材质/模糊全被掐掉。
  *
- * 这里 Hook framework 的 Settings 读取方法（不会改系统数据库、不影响其它进程），
- * 只在「作用域内、且 key 是高级材质开关」时返回 1，其余一律 chain.proceed()。
- * 同时覆盖 miuix 的 HyperMaterialUtils.isFeatureEnable()、其它应用里同样的读取点。
+ * 这里 Hook framework 的 Settings 读取方法（不改系统数据库、不影响其它进程），
+ * 只在「作用域内、且 key 是 background_blur_enable」时返回 1，其余一律 chain.proceed()。
+ *
+ * v3.0 精简：只保留反编译确认的唯一 key 与 int/String 两类 getter；
+ * 删除三个猜测别名（enable_background_blur / background_blur_mode /
+ * background_blur_setting）和 getLong / getFloat —— 日志中从未命中，只会多挂 Hook。
  */
 final class GlobalSwitchHooks {
 
@@ -35,15 +37,11 @@ final class GlobalSwitchHooks {
             "android.provider.Settings$Global",
     };
 
-    private static final Set<String> KEYS = new HashSet<>(Arrays.asList(
-            "background_blur_enable",
-            "enable_background_blur",
-            "background_blur_mode",
-            "background_blur_setting"
-    ));
+    /** 桌面实际读取的唯一 key。 */
+    private static final String KEY = "background_blur_enable";
 
     private static final Set<String> GETTERS = new HashSet<>(Arrays.asList(
-            "getInt", "getString", "getLong", "getFloat", "getIntForUser", "getStringForUser"
+            "getInt", "getString", "getIntForUser", "getStringForUser"
     ));
 
     private GlobalSwitchHooks() {
@@ -81,13 +79,19 @@ final class GlobalSwitchHooks {
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
                         String key = keyOf(chain);
-                        if (key != null && KEYS.contains(key)) {
+                        if (KEY.equals(key)) {
                             Diag.once(module, "fire:gs:" + pkg + ":" + key,
                                     "★ 全局开关 " + label + " 读取 " + key + " -> 伪造成已开启(1)");
                             return fakeValue(chain.getExecutable());
                         }
                         return chain.proceed();
                     });
+            // 只反优化真正被 Hook 的方法，防止 ART 内联绕过（不再整类 deoptimize）
+            try {
+                module.deoptimize(m);
+            } catch (Throwable ignored) {
+                // 个别方法不支持反优化
+            }
             return true;
         } catch (Throwable t) {
             Diag.w(module, "hook " + cn + "." + m.getName() + " 失败", t);
@@ -114,12 +118,6 @@ final class GlobalSwitchHooks {
         Class<?> ret = e instanceof Method ? ((Method) e).getReturnType() : int.class;
         if (ret == String.class) {
             return "1";
-        }
-        if (ret == long.class || ret == Long.class) {
-            return 1L;
-        }
-        if (ret == float.class || ret == Float.class) {
-            return 1.0f;
         }
         if (ret == boolean.class || ret == Boolean.class) {
             return Boolean.TRUE;

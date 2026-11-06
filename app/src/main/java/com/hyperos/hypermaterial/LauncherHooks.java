@@ -2,8 +2,6 @@ package com.hyperos.hypermaterial;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.Locale;
 
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
@@ -24,7 +22,9 @@ import io.github.libxposed.api.XposedModule;
  * </pre>
  *
  * v1.3：早期绝不触发宿主 &lt;clinit&gt;（会打崩桌面），静态字段写入全部交给 Deferred。
- * v2.0：删除日志中从未命中的 isNotSupportBlurDevice。
+ * v3.0 精简：只保留门控链上反编译确认的三个方法与四个确定字段；删除
+ * 四个猜测性 hookBoolean、静态 boolean 字段全量扫描、整类 deoptimize 和安装期的
+ * 方法清单 dump —— 这些从未命中，且全量扫描可能误写宿主字段。
  */
 final class LauncherHooks {
 
@@ -44,88 +44,36 @@ final class LauncherHooks {
             return;
         }
 
-        Diag.dumpStaticFields(module, pkg + ":BU", bu);   // 只读名字，安全
-        Diag.dumpMethods(module, pkg + ":BU", bu);
-        Diag.dumpStaticFields(module, pkg + ":MM", mm);
-        Diag.dumpMethods(module, pkg + ":MM", mm);
+        hookBoolean(module, pkg, bu, "isBlurSupported", Boolean.TRUE);
+        hookBoolean(module, pkg, mm, "isSupportHyperMaterialBlur", Boolean.TRUE);
+        hookBoolean(module, pkg, mm, "shouldApplyBlur", Boolean.TRUE);
 
-        if (bu != null) {
-            hookBoolean(module, pkg, bu, "isBlurSupported", Boolean.TRUE);
-            hookBoolean(module, pkg, bu, "isBackgroundBlurSupported", Boolean.TRUE);
-            hookBoolean(module, pkg, bu, "isThreeLayerBlurSupported", Boolean.TRUE);
-            hookBoolean(module, pkg, bu, "isWidgetBlurSupported", Boolean.TRUE);
-            hookBoolean(module, pkg, bu, "isSupportSetMiBlurList", Boolean.TRUE);
-
-            // 设置变化 / 主题切换后桌面会重读 Settings 并把字段改回 false，执行后压回 true
-            hookReassert(module, pkg, bu, "setBackgroundBlurEnabled", bu);
-        }
-
-        if (mm != null) {
-            // 直接返回 true，绕过 getVersion() >= 4 这道检查
-            hookBoolean(module, pkg, mm, "isSupportHyperMaterialBlur", Boolean.TRUE);
-            hookBoolean(module, pkg, mm, "shouldApplyBlur", Boolean.TRUE);
-        }
-
-        if (Config.AGGRESSIVE_DEOPTIMIZE) {
-            deoptimizeAll(module, bu);
-            deoptimizeAll(module, mm);
-        }
+        // 设置变化 / 主题切换后桌面会重读 Settings 并把字段改回 false，执行后压回 true
+        hookReassert(module, pkg, bu, "setBackgroundBlurEnabled");
 
         // 静态字段注入会触发 <clinit>，延后到应用就绪后
-        Deferred.post(module, pkg, () -> injectFields(module, pkg, bu, mm));
+        Deferred.post(module, pkg, () -> injectFields(module, pkg, bu));
 
         Diag.i(module, pkg + ": 桌面高级材质放行安装完成");
     }
 
     /** 只在应用就绪后执行，此时 ContextProvider / DimenUtils 已可用。 */
-    private static void injectFields(XposedModule module, String pkg, Class<?> bu, Class<?> mm) {
+    private static void injectFields(XposedModule module, String pkg, Class<?> bu) {
         if (bu == null) {
             return;
         }
         Diag.dumpStaticFieldValues(module, pkg + ":BU", bu);
-        Diag.dumpStaticFieldValues(module, pkg + ":MM", mm);
-
         Diag.i(module, pkg + ": 桌面开关原值 IS_BACKGROUND_BLUR_ENABLED="
                 + readStatic(bu, "IS_BACKGROUND_BLUR_ENABLED"));
 
-        // 免疫 ART 内联（30+ 调用点里不少会把 isBlurSupported 内联进去）
+        // 免疫 ART 内联：即使 isBlurSupported() 被内联，读到的静态字段也是 true
         Host.setStatic(bu, "IS_BACKGROUND_BLUR_ENABLED", Boolean.TRUE);
         Host.setStatic(bu, "IS_BACKGROUND_BLUR_SUPPORTED", Boolean.TRUE);
         Host.setStatic(bu, "mIsSupportMiBlurList", Boolean.TRUE);
         Host.setStatic(bu, "sThreeLayerBlurSupportedCache", Boolean.TRUE);
-        forceBlurFields(module, pkg, bu);
 
         Diag.i(module, pkg + ": 桌面开关注入后 IS_BACKGROUND_BLUR_ENABLED="
                 + readStatic(bu, "IS_BACKGROUND_BLUR_ENABLED"));
-    }
-
-    /** 按语义扫描静态 boolean 开关，适配不同桌面版本的字段名。只在延迟阶段调用。 */
-    private static void forceBlurFields(XposedModule module, String pkg, Class<?> bu) {
-        int ok = 0;
-        for (Field f : bu.getDeclaredFields()) {
-            if (!Modifier.isStatic(f.getModifiers())) {
-                continue;
-            }
-            Class<?> t = f.getType();
-            if (t != boolean.class && t != Boolean.class) {
-                continue;
-            }
-            String n = f.getName().toUpperCase(Locale.ROOT);
-            if ((!n.contains("BLUR") && !n.contains("SUPPORT"))
-                    || n.contains("NOTSUPPORT") || n.contains("DISABLE")) {
-                continue;
-            }
-            try {
-                f.setAccessible(true);
-                f.set(null, Boolean.TRUE);
-                ok++;
-                Diag.once(module, "lh:sf:" + pkg + ":" + f.getName(),
-                        pkg + ": 桌面静态字段 " + f.getName() + " -> true ✓");
-            } catch (Throwable ignored) {
-                // static final / 类型异常
-            }
-        }
-        Diag.i(module, pkg + ": 桌面 blur 静态字段扫描注入 ok=" + ok);
     }
 
     /** 只在延迟阶段调用；早期读静态字段会触发 &lt;clinit&gt;。 */
@@ -161,14 +109,22 @@ final class LauncherHooks {
                         Diag.once(module, fireKey, "★ 桌面命中 " + name + " -> " + value);
                         return value;
                     });
+            // 精确反优化，防止短方法被 ART 内联绕过 Hook
+            try {
+                module.deoptimize(m);
+            } catch (Throwable ignored) {
+                // 个别方法不支持反优化
+            }
             Diag.i(module, "hooked 桌面 " + name + "()");
         } catch (Throwable t) {
             Diag.w(module, "hook 桌面 " + name + " 失败", t);
         }
     }
 
-    private static void hookReassert(XposedModule module, String pkg, Class<?> c,
-                                     String name, Class<?> bu) {
+    private static void hookReassert(XposedModule module, String pkg, Class<?> c, String name) {
+        if (c == null) {
+            return;
+        }
         Method m = Host.firstMethod(c, name);
         if (m == null) {
             return;
@@ -179,32 +135,15 @@ final class LauncherHooks {
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
                         Object r = chain.proceed();
-                        Host.setStatic(bu, "IS_BACKGROUND_BLUR_ENABLED", Boolean.TRUE);
-                        Host.setStatic(bu, "sThreeLayerBlurSupportedCache", Boolean.TRUE);
+                        Host.setStatic(c, "IS_BACKGROUND_BLUR_ENABLED", Boolean.TRUE);
+                        Host.setStatic(c, "sThreeLayerBlurSupportedCache", Boolean.TRUE);
                         Diag.once(module, "fire:lh:" + pkg + ":reassert",
                                 "★ 桌面 " + name + " 执行后已重新压回 true");
                         return r;
                     });
-            Diag.i(module, "hooked 桌面 " + name);
+            Diag.i(module, "hooked 桌面 " + name + "()");
         } catch (Throwable t) {
             Diag.w(module, "hook 桌面 " + name + " 失败", t);
         }
-    }
-
-    private static void deoptimizeAll(XposedModule module, Class<?> c) {
-        if (c == null) {
-            return;
-        }
-        int ok = 0;
-        for (Method m : c.getDeclaredMethods()) {
-            try {
-                module.deoptimize(m);
-                ok++;
-            } catch (Throwable ignored) {
-                // ignore
-            }
-        }
-        Diag.i(module, "桌面 " + c.getSimpleName() + " deoptimize " + ok
-                + "/" + c.getDeclaredMethods().length);
     }
 }

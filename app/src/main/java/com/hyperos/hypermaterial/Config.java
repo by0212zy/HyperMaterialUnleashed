@@ -15,9 +15,6 @@ final class Config {
     /** 暴露「长按手势提示线 → 超级小爱识屏」的广播触发入口（供其它 App 用 shell 调用）。 */
     static final boolean ENABLE_XIAOAI_TRIGGER = true;
 
-    /** 短方法易被 ART 内联，反优化配合静态字段注入提高 Hook 命中率。 */
-    static final boolean AGGRESSIVE_DEOPTIMIZE = true;
-
     private Config() {
     }
 }

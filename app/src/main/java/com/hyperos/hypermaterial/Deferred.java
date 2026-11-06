@@ -73,13 +73,11 @@ final class Deferred {
         }
         // 主触发点：第一个 Activity 创建完成（Application / 全局 Context 必然就绪）
         hookAfter(module, "android.app.Activity", "onCreate", new Class<?>[]{Bundle.class});
-        // 备用触发点：onResume 更晚，覆盖某些不调用 super.onCreate 的实现
-        hookAfter(module, "android.app.Activity", "onResume", new Class<?>[]{});
         // late inject 兜底：模块载入时 Application 已存在，直接执行
         if (applicationReady()) {
             fire(module);
         }
-        // 零依赖兜底：主线程延时触发，完全不依赖上面两个 framework Hook 是否成功。
+        // 零依赖兜底：主线程延时触发，完全不依赖上面的 framework Hook 是否成功。
         // 若 Hook 成功，FIRED 会先被置位，定时器再调 fire 会被 compareAndSet 直接挡掉。
         try {
             new android.os.Handler(android.os.Looper.getMainLooper())
