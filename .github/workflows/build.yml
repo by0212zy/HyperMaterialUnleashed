@@ -19,18 +19,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      # ubuntu-latest 预装了 Android SDK，但 sdkmanager 不在 PATH；
-      # setup-android 会配置 ANDROID_HOME、把 cmdline-tools 加入 PATH 并接受 licenses
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      # ubuntu-latest 预装 Android SDK（/usr/local/lib/android/sdk），但 sdkmanager
+      # 不在 PATH 且版本目录名会变；这里自行定位，避免依赖会安装已下架 tools 包的第三方 action。
+      - name: Set up Android SDK 35
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKM=$(find "$SDK/cmdline-tools" -type f -path '*/bin/sdkmanager' 2>/dev/null | head -1)
+          if [ -z "$SDKM" ]; then SDKM="$SDK/tools/bin/sdkmanager"; fi
+          echo "ANDROID_HOME=$SDK" | tee -a "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "sdkmanager=$SDKM"
+          test -x "$SDKM"
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" > /dev/null
 
       - name: Make gradlew executable
         run: chmod +x gradlew
