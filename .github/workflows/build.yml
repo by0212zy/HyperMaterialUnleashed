@@ -24,10 +24,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK 35
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      # ubuntu-latest 预装了 Android SDK，但 sdkmanager 不在 PATH；
+      # setup-android 会配置 ANDROID_HOME、把 cmdline-tools 加入 PATH 并接受 licenses
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null
 
       - name: Make gradlew executable
         run: chmod +x gradlew
@@ -47,4 +50,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
+          # 不生成 release notes，避免覆盖手动编写的中文发布说明
